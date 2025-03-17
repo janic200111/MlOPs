@@ -4,31 +4,14 @@ import numpy as np
 from PIL import Image
 import torch
 from torch.utils.data import Dataset, DataLoader
-# import tensorflow as tf
-# from tensorflow.keras.optimizers import Adam
-# from tensorflow.keras.layers import (
-#     Conv2D,
-#     MaxPooling2D,
-#     Dense,
-#     Flatten,
-#     Activation,
-#     Conv2DTranspose,
-#     UpSampling2D,
-# )
-from keras.layers import Conv2D, Activation, BatchNormalization, Dropout
-# from tensorflow.keras.models import Model, load_model, Sequential
-from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 from torchvision import transforms
-# from tensorflow.keras.preprocessing.image import img_to_array, load_img
 import lightning as L
 import torch.nn.functional as F
 import torch.optim as optim
 from torch import nn
-
-
-def ssim_metric(y_true, y_pred):
-    return tf.reduce_mean(tf.image.ssim(y_true, y_pred, max_val=1.0))
+import mlflow
+from pytorch_lightning.loggers import MLFlowLogger
 
 
 # PyTorch Dataset class
@@ -91,71 +74,85 @@ class ImageColorizationModel(L.LightningModule):
         self.create_model(is_batch_norm=False, is_drop=False)
 
     def forward(self, x):
-        return self.model(x)
+        skips = []  # Store skip connections
+
+        # Encoder pass
+        for layer in self.encoder:
+            x = layer(x)
+            skips.append(x)  # Store feature maps for skip connections
+
+        # Decoder pass (reverse the encoder outputs for skip connections)
+        for i, layer in enumerate(self.decoder):
+            x = torch.cat([x, skips[-(i + 1)]], dim=1)  # Concatenate skip connection
+            x = layer(x)
+
+        return x
 
     def training_step(self, batch, batch_idx):
         x, y = batch
-        y_hat = self.model(x)
+        y_hat = self(x)
         loss = F.mse_loss(y_hat, y)
-        self.log("train_loss", loss)
+        self.log(
+            "train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True
+        )
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
-        y_hat = self.model(x)
+        y_hat = self(x)
         loss = F.mse_loss(y_hat, y)
-        self.log("val_loss", loss)
+        self.log(
+            "val_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True
+        )
         return loss
 
     def configure_optimizers(self):
         return optim.Adam(self.parameters(), lr=0.001)
 
     def create_model(self, is_batch_norm, is_drop):
-        filters = [64, 128, 256]
-        layers = []
 
-        # Encoder (Convolution Layers)
-        for f in filters:
-            layers.append(
-                nn.Conv2d(
-                    in_channels=1 if len(layers) == 0 else f // 2,
-                    out_channels=f,
-                    kernel_size=3,
-                    padding=1,
-                )
-            )
-            if is_batch_norm:
-                layers.append(nn.BatchNorm2d(f))
-            if is_drop:
-                layers.append(nn.Dropout(0.3))
-            layers.append(nn.ReLU())
-
-        # Decoder (Transpose Convolution Layers)
-        filters.reverse()
-        for f in filters:
-            layers.append(
-                nn.ConvTranspose2d(
-                    in_channels=f * 2 if len(layers) == len(filters) else f * 4,
-                    out_channels=f,
-                    kernel_size=3,
-                    padding=1,
-                )
-            )
-            layers.append(nn.ReLU())
-
-        # Final Layer
-        layers.append(
-            nn.ConvTranspose2d(
-                in_channels=filters[0], out_channels=3, kernel_size=3, padding=1
-            )
+        # Encoder
+        self.encoder = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1), nn.ReLU()
+                ),
+                nn.Sequential(
+                    nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1), nn.ReLU()
+                ),
+                nn.Sequential(
+                    nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1), nn.ReLU()
+                ),
+            ]
         )
-        layers.append(nn.Sigmoid())
 
-        self.model = nn.Sequential(*layers)
+        # Decoder
+        self.decoder = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.ConvTranspose2d(
+                        256 + 256, 128, kernel_size=3, stride=1, padding=1
+                    ),  # Skip connection
+                    nn.ReLU(),
+                ),
+                nn.Sequential(
+                    nn.ConvTranspose2d(
+                        128 + 128, 64, kernel_size=3, stride=1, padding=1
+                    ),  # Skip connection
+                    nn.ReLU(),
+                ),
+                nn.Sequential(
+                    nn.ConvTranspose2d(
+                        64 + 64, 3, kernel_size=3, stride=1, padding=1
+                    ),  # Final RGB output
+                    nn.Sigmoid(),  # Output pixel values in [0, 1]
+                ),
+            ]
+        )
 
     def debug(self):
         print("Model summary:")
-        print(self.model)
+        print(self)
 
 
 if __name__ == "__main__":
@@ -172,9 +169,22 @@ if __name__ == "__main__":
     model = ImageColorizationModel()
     model.debug()
 
-    trainer = L.Trainer(max_epochs=10)
+    mlflow_logger = MLFlowLogger(experiment_name="image-colorization")
+
+    trainer = L.Trainer(max_epochs=10, logger=mlflow_logger)
     trainer.fit(model, data_module)
 
+    metrics = trainer.callback_metrics
+    train_losses = [metrics['train_loss_epoch'].item()]
+    val_losses = [metrics['val_loss_epoch'].item()]
+
+    plt.plot(train_losses, label="Train Loss")
+    plt.plot(val_losses, label="Validation Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training and Validation Loss")
+    plt.legend()
+    plt.show()
 
 # OLD TRAINING AND PLOTTING BELOW
 
