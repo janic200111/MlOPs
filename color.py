@@ -12,6 +12,31 @@ import torch.optim as optim
 from torch import nn
 import mlflow
 from pytorch_lightning.loggers import MLFlowLogger
+import optuna
+
+def objective(trial):
+    lr = trial.suggest_loguniform("lr", 1e-4, 1e-2)
+    batch_size = trial.suggest_categorical("batch_size", [8, 16, 32])
+    patch_size = trial.suggest_categorical("patch_size", [(32, 32), (64, 64), (128, 128)])
+    num_rot = trial.suggest_int("num_rot", 1, 4)
+
+    transform = transforms.Compose([transforms.ToTensor()])
+    
+    data_module = ImageColorizationDataModule(
+        path="Dane", batch_size=batch_size, patch_size=patch_size, num_rot=num_rot, transform=transform
+    )
+    
+    model = ImageColorizationModel(lr=lr)
+    
+    trainer = L.Trainer(max_epochs=5, logger=False, enable_checkpointing=False)
+    
+    trainer.fit(model, data_module)
+    
+    val_loss = trainer.callback_metrics["val_loss_epoch"].item()
+    
+    return val_loss
+
+
 
 
 # PyTorch Dataset class
@@ -69,8 +94,9 @@ class ImageColorizationDataModule(L.LightningDataModule):
 
 
 class ImageColorizationModel(L.LightningModule):
-    def __init__(self):
+    def __init__(self, lr=0.001): 
         super().__init__()
+        self.lr = lr 
         self.create_model(is_batch_norm=False, is_drop=False)
 
     def forward(self, x):
@@ -107,7 +133,7 @@ class ImageColorizationModel(L.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        return optim.Adam(self.parameters(), lr=0.001)
+        return optim.Adam(self.parameters(), lr=self.lr) 
 
     def create_model(self, is_batch_norm, is_drop):
 
@@ -163,71 +189,21 @@ if __name__ == "__main__":
     num_rot = 1
     transform = transforms.Compose([transforms.ToTensor()])
 
-    data_module = ImageColorizationDataModule(
-        data_dir, batch_size, patch_size, num_rot, transform
-    )
     model = ImageColorizationModel()
     model.debug()
 
     mlflow_logger = MLFlowLogger(experiment_name="image-colorization")
 
-    trainer = L.Trainer(max_epochs=10, logger=mlflow_logger)
-    trainer.fit(model, data_module)
+    study = optuna.create_study(direction="minimize")
+    study.optimize(objective, n_trials=20)
 
-    metrics = trainer.callback_metrics
-    train_losses = [metrics['train_loss_epoch'].item()]
-    val_losses = [metrics['val_loss_epoch'].item()]
+    best_params = study.best_params
+    print("Best hyperparameters:", best_params)
 
-    plt.plot(train_losses, label="Train Loss")
-    plt.plot(val_losses, label="Validation Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Training and Validation Loss")
-    plt.legend()
-    plt.show()
+    final_model = ImageColorizationModel(lr=best_params["lr"])
+    data_module = ImageColorizationDataModule(
+        path="Dane", batch_size=best_params["batch_size"], patch_size=(64, 64), num_rot=1, transform=transforms.Compose([transforms.ToTensor()])
+    )
 
-# OLD TRAINING AND PLOTTING BELOW
-
-# X_train, Y_train = [], []
-# for bw, color in dataloader:
-#     X_train.append(bw.numpy().transpose(0, 2, 3, 1))
-#     Y_train.append(color.numpy().transpose(0, 2, 3, 1))
-
-# X_train = np.concatenate(X_train, axis=0)
-# Y_train = np.concatenate(Y_train, axis=0)
-
-# model = create_model(0, 1, 1)
-# history = model.fit(X_train, Y_train, validation_split=0.2, epochs=Epochs)
-# plt.plot(history.history["loss"])
-# plt.plot(history.history["val_loss"])
-# plt.title("Model loss")
-# plt.xlabel("Epoch")
-# plt.legend(["Train", "Validation"])
-# plt.show()
-
-# # Additional test on a single image
-# obraz = load_img("test.jpg", target_size=(256, 256))
-# obraz_1 = obraz
-# bw_image = obraz.convert("L")
-# obraz = img_to_array(bw_image)
-# obraz = obraz / 255.0  # Normalization
-# obraz = np.expand_dims(obraz, axis=0)
-# wynik = model.predict(obraz)
-# wynikowy_obraz = wynik[0]
-# wynikowy_obraz = (wynikowy_obraz * 255).astype(np.uint8)
-
-# fig, axes = plt.subplots(1, 3, figsize=(12, 6))
-
-# axes[2].imshow(wynikowy_obraz)
-# axes[2].set_title("Wynikowy Obraz")
-# axes[2].axis("off")
-
-# axes[0].imshow(obraz_1)
-# axes[0].set_title("Obraz 1")
-# axes[0].axis("off")
-
-# axes[1].imshow(bw_image, cmap="gray")
-# axes[1].set_title("Czarno-biały")
-# axes[1].axis("off")
-
-# plt.show()
+    trainer = L.Trainer(max_epochs=10)
+    trainer.fit(final_model, data_module)
