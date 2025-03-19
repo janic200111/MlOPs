@@ -27,9 +27,11 @@ def objective(trial):
     )
     
     model = ImageColorizationModel(lr=lr)
-    
-    trainer = L.Trainer(max_epochs=5, logger=False, enable_checkpointing=False)
-    
+
+    mlflow_logger = MLFlowLogger(experiment_name="image-colorization")
+
+    trainer = L.Trainer(max_epochs=5, logger=mlflow_logger, enable_checkpointing=False)
+
     trainer.fit(model, data_module)
     
     val_loss = trainer.callback_metrics["val_loss_epoch"].item()
@@ -94,9 +96,9 @@ class ImageColorizationDataModule(L.LightningDataModule):
 
 
 class ImageColorizationModel(L.LightningModule):
-    def __init__(self, lr=0.001): 
+    def __init__(self, lr=0.001):
         super().__init__()
-        self.lr = lr 
+        self.lr = lr
         self.create_model(is_batch_norm=False, is_drop=False)
 
     def forward(self, x):
@@ -133,7 +135,7 @@ class ImageColorizationModel(L.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        return optim.Adam(self.parameters(), lr=self.lr) 
+        return optim.Adam(self.parameters(), lr=self.lr)
 
     def create_model(self, is_batch_norm, is_drop):
 
@@ -202,8 +204,12 @@ if __name__ == "__main__":
 
     final_model = ImageColorizationModel(lr=best_params["lr"])
     data_module = ImageColorizationDataModule(
-        path="Dane", batch_size=best_params["batch_size"], patch_size=(64, 64), num_rot=1, transform=transforms.Compose([transforms.ToTensor()])
+        path="Dane",
+        batch_size=best_params["batch_size"],
+        patch_size=(64, 64),
+        num_rot=1,
+        transform=transforms.Compose([transforms.ToTensor()]),
     )
 
-    trainer = L.Trainer(max_epochs=10)
+    trainer = L.Trainer(max_epochs=10, logger=mlflow_logger)
     trainer.fit(final_model, data_module)
