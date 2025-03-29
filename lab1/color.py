@@ -213,3 +213,27 @@ if __name__ == "__main__":
 
     trainer = L.Trainer(max_epochs=10, logger=mlflow_logger)
     trainer.fit(final_model, data_module)
+
+
+    # Save the best model
+    torch.save(final_model.state_dict(), "best_model.pth")
+
+    # Load the model for inference
+    final_model.load_state_dict(torch.load("best_model.pth"))
+    final_model.eval()
+
+    # Load and preprocess the test image
+    test_image_path = "test.jpg"
+    test_image = Image.open(test_image_path).convert("L").resize((64, 64))
+    test_image_tensor = transforms.ToTensor()(test_image).unsqueeze(0)  # Add batch dimension
+
+    # Predict
+    with torch.no_grad():
+        predicted_image_tensor = final_model(test_image_tensor)
+
+    # Convert the predicted tensor to an image
+    predicted_image = transforms.ToPILImage()(predicted_image_tensor.squeeze(0).clamp(0, 1))
+
+    # Save or display the predicted image
+    predicted_image.save("predicted_test.jpg")
+    predicted_image.show()
