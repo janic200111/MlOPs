@@ -1,0 +1,13 @@
+service: "service:GPT2Service"  # Nazwa serwisu zgodna z kodem w service.py
+labels:
+  owner: "your_name"
+  project: "lab2"
+description: "A BentoML service for GPT-2 text generation."
+
+include:
+  - "*.py"  # Uwzględnia wszystkie pliki Python w katalogu projektu
+  - "requirements.txt"  # Dodaje plik z zależnościami
+
+python:
+  requirements_txt: "requirements.txt"
+
