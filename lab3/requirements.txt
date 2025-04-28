@@ -1,0 +1,6 @@
+boto3
+transformers
+Pillow
+torch
+numpy
+matplotlib
