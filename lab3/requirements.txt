@@ -1,6 +1,8 @@
-boto3
-transformers
-Pillow
-torch
-numpy
-matplotlib
+boto3==1.37.37
+transformers==4.51.3
+pillow==10.3.0
+torch==2.6.0
+numpy==1.26.4
+matplotlib==3.8.4
+scikit-learn==1.4.2
+scipy==1.13.0

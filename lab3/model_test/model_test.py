@@ -13,6 +13,7 @@ def ade20k_colormap():
 
 # Load the model and image processor
 model_name = "facebook/mask2former-swin-large-ade-semantic"
+# model_name = "../model"
 image_processor = AutoImageProcessor.from_pretrained(model_name)
 model = Mask2FormerForUniversalSegmentation.from_pretrained(model_name)
 
@@ -48,3 +49,8 @@ blended = np.where(
 # Save result
 blended_img = Image.fromarray(blended)
 blended_img.save("segmentation_overlay.png")
+
+
+# Use to save the model and image processor locally
+# image_processor.save_pretrained("../model")
+# model.save_pretrained("../model")
