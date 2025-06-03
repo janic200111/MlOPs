@@ -1,18 +1,8 @@
-#!/usr/bin/env python3
-# chromadb_stats.py
-
 import chromadb
-from pathlib import Path
+
 
 def show_chroma_stats(persist_dir: str, collection_name: str) -> None:
-    """
-    Open the ChromaDB collection stored under `persist_dir` and print basic statistics:
-      - List of collections in that directory
-      - Whether `collection_name` exists
-      - Number of items in the collection
-      - Embedding dimension (inferred from one sample entry)
-      - Keys and a sample of the stored metadata and document text
-    """
+
     # 1. Connect to the persistent Chroma client on disk
     client = chromadb.PersistentClient(path=persist_dir)
 
